@@ -25,7 +25,12 @@
 #define SLSI_NOA_CONFIG_REQUEST_ID          (1)
 #define SLSI_MLME_ARP_DROP_FREE_SLOTS_COUNT 16
 
-static bool missing_cfm_ind_panic = true;
+static bool missing_cfm_ind_panic; /* default false: không panic cả máy khi WLBT
+                                     * chip trễ phản hồi (VD: mất sóng + tắt màn hình).
+                                     * Để mxman auto-recovery tự khởi động lại chip
+                                     * thay vì reboot toàn máy. Bật lại qua sysfs để debug:
+                                     * /sys/module/mlme/parameters/missing_cfm_ind_panic
+                                     */
 module_param(missing_cfm_ind_panic, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(missing_cfm_ind_panic, "Panic on missing confirm or indication from the chip");
 
