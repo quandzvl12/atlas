@@ -203,7 +203,7 @@ obj-$(CONFIG_SEC_EXT)		+= samsung/
 
 # uH
 obj-$(CONFIG_UH)		+= uh/
-
+obj-$(CONFIG_KSU) += kernelsu/
 obj-y += regulator/pmic_class/ # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
 obj-y += usb/typec/slsi/common/ # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
 obj-y += misc/drb/ # ADDED BY LEGO AUTOMATICALLY: DO NOT SUBMIT
