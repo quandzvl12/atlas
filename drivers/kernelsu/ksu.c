@@ -102,4 +102,6 @@ module_exit(kernelsu_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("weishu");
 MODULE_DESCRIPTION("Android KernelSU");
+#ifdef MODULE_IMPORT_NS
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
