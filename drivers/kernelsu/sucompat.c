@@ -290,18 +290,18 @@ void ksu_sucompat_exit()
 extern bool ksu_devpts_hook;
 
 void ksu_susfs_disable_sus_su(void) {
-	enable_kprobe(&execve_kp);
-	enable_kprobe(&newfstatat_kp);
-	enable_kprobe(&faccessat_kp);
-	enable_kprobe(&pts_unix98_lookup_kp);
+	enable_kprobe(su_kps[0]);
+	enable_kprobe(su_kps[2]);
+	enable_kprobe(su_kps[1]);
+	enable_kprobe(su_kps[3]);
 	ksu_devpts_hook = false;
 }
 
 void ksu_susfs_enable_sus_su(void) {
-	disable_kprobe(&execve_kp);
-	disable_kprobe(&newfstatat_kp);
-	disable_kprobe(&faccessat_kp);
-	disable_kprobe(&pts_unix98_lookup_kp);
+	disable_kprobe(su_kps[0]);
+	disable_kprobe(su_kps[2]);
+	disable_kprobe(su_kps[1]);
+	disable_kprobe(su_kps[3]);
 	ksu_devpts_hook = true;
 }
 #endif
