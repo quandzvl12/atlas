@@ -607,7 +607,7 @@ static bool add_genfscon(struct policydb *db, const char *fs_name,
 	return false;
 }
 
-static void *ksu_realloc(void *old, size_t new_size, size_t old_size)
+static void *__maybe_unused ksu_realloc(void *old, size_t new_size, size_t old_size)
 {
 	// we can't use krealloc, because it may be read-only
 	void *new = kzalloc(new_size, GFP_ATOMIC);
@@ -677,12 +677,10 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 		return false;
 	}
 
-	char **new_val_to_name_types =
-		ksu_realloc(db->sym_val_to_name[SYM_TYPES],
-			    sizeof(char *) * value,
-			    sizeof(char *) * (value - 1));
-	if (!new_val_to_name_types) {
-		pr_err("add_type: alloc val_to_name failed\n");
+	rc = flex_array_prealloc(db->sym_val_to_name[SYM_TYPES], value - 1,
+				  value, GFP_ATOMIC | __GFP_ZERO);
+	if (rc) {
+		pr_err("add_type: prealloc sym_val_to_name[SYM_TYPES] failed\n");
 		return false;
 	}
 
@@ -692,8 +690,8 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 	flex_array_put_ptr(db->type_val_to_struct_array, value - 1, type,
 			    GFP_ATOMIC);
 
-	db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
-	db->sym_val_to_name[SYM_TYPES][value - 1] = key;
+	flex_array_put_ptr(db->sym_val_to_name[SYM_TYPES], value - 1, key,
+			    GFP_ATOMIC);
 
 	int i;
 	for (i = 0; i < db->p_roles.nprim; ++i) {
