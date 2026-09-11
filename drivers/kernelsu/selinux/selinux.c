@@ -71,6 +71,10 @@ bool getenforce()
 #endif
 }
 
+// Atlas (Samsung Exynos 4.19 downstream) already provides current_sid()
+// via security/selinux/include/objsec.h -- skip KSU's own duplicate.
+#define KSU_COMPAT_HAS_CURRENT_SID
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)) &&                         \
 	!defined(KSU_COMPAT_HAS_CURRENT_SID)
 /*

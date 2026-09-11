@@ -524,6 +524,7 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 		return false;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 	struct filename_trans_key key;
 	key.ttype = tgt->value;
 	key.tclass = cls->value;
@@ -561,6 +562,43 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 
 	db->compat_filename_trans_count++;
 	return ebitmap_set_bit(&trans->stypes, src->value - 1, 1) == 0;
+#else
+	// Pre-5.9 kernels (Atlas/Exynos 4.19 included): filename_trans is a
+	// plain hashtab keyed on (stype, ttype, tclass, name) -> single otype,
+	// no per-entry stypes ebitmap / linked chain / compat counter exist.
+	struct filename_trans key;
+	key.stype = src->value;
+	key.ttype = tgt->value;
+	key.tclass = cls->value;
+	key.name = (char *)o;
+
+	struct filename_trans_datum *trans =
+		hashtab_search(db->filename_trans, &key);
+	if (trans) {
+		trans->otype = def->value;
+		return true;
+	}
+
+	trans = (struct filename_trans_datum *)kzalloc(sizeof(*trans),
+							GFP_ATOMIC);
+	if (!trans)
+		return false;
+	trans->otype = def->value;
+
+	struct filename_trans *new_key =
+		(struct filename_trans *)kmalloc(sizeof(*new_key), GFP_ATOMIC);
+	if (!new_key)
+		return false;
+	*new_key = key;
+	new_key->name = kstrdup(o, GFP_ATOMIC);
+	if (!new_key->name)
+		return false;
+
+	if (hashtab_insert(db->filename_trans, new_key, trans))
+		return false;
+
+	return true;
+#endif
 }
 
 static bool add_genfscon(struct policydb *db, const char *fs_name,
@@ -616,23 +654,26 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 		return false;
 	}
 
-	struct ebitmap *new_type_attr_map_array =
-		ksu_realloc(db->type_attr_map_array,
-			    value * sizeof(struct ebitmap),
-			    (value - 1) * sizeof(struct ebitmap));
+	struct ebitmap *new_type_attr_map_array;
+	int rc;
 
+	rc = flex_array_prealloc(db->type_attr_map_array, value - 1, value,
+				  GFP_ATOMIC | __GFP_ZERO);
+	if (rc) {
+		pr_err("add_type: prealloc type_attr_map_array failed\n");
+		return false;
+	}
+	new_type_attr_map_array = flex_array_get(db->type_attr_map_array,
+						  value - 1);
 	if (!new_type_attr_map_array) {
-		pr_err("add_type: alloc type_attr_map_array failed\n");
+		pr_err("add_type: get type_attr_map_array slot failed\n");
 		return false;
 	}
 
-	struct type_datum **new_type_val_to_struct =
-		ksu_realloc(db->type_val_to_struct,
-			    sizeof(*db->type_val_to_struct) * value,
-			    sizeof(*db->type_val_to_struct) * (value - 1));
-
-	if (!new_type_val_to_struct) {
-		pr_err("add_type: alloc type_val_to_struct failed\n");
+	rc = flex_array_prealloc(db->type_val_to_struct_array, value - 1,
+				  value, GFP_ATOMIC | __GFP_ZERO);
+	if (rc) {
+		pr_err("add_type: prealloc type_val_to_struct_array failed\n");
 		return false;
 	}
 
@@ -645,12 +686,11 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 		return false;
 	}
 
-	db->type_attr_map_array = new_type_attr_map_array;
-	ebitmap_init(&db->type_attr_map_array[value - 1]);
-	ebitmap_set_bit(&db->type_attr_map_array[value - 1], value - 1, 1);
+	ebitmap_init(new_type_attr_map_array);
+	ebitmap_set_bit(new_type_attr_map_array, value - 1, 1);
 
-	db->type_val_to_struct = new_type_val_to_struct;
-	db->type_val_to_struct[value - 1] = type;
+	flex_array_put_ptr(db->type_val_to_struct_array, value - 1, type,
+			    GFP_ATOMIC);
 
 	db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
 	db->sym_val_to_name[SYM_TYPES][value - 1] = key;
@@ -696,7 +736,8 @@ static bool set_type_state(struct policydb *db, const char *type_name,
 static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
 				  struct type_datum *attr)
 {
-	struct ebitmap *sattr = &db->type_attr_map_array[type->value - 1];
+	struct ebitmap *sattr = flex_array_get(db->type_attr_map_array,
+						type->value - 1);
 	ebitmap_set_bit(sattr, attr->value - 1, 1);
 
 	struct hashtab_node *node;
