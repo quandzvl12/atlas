@@ -27,6 +27,9 @@
 #include <linux/task_work.h>
 #include <linux/sched/task.h>
 #include <linux/fslog.h>
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#include <linux/susfs.h>
+#endif
 #include <linux/fs_context.h>
 
 #include "pnode.h"
