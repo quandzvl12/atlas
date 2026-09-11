@@ -75,7 +75,11 @@ CONFIG_ARM_EXYNOS_UFC=y
 CONFIG_CRYPTO_SHA1_ARM64_CE=y
 CONFIG_CRYPTO_SHA2_ARM64_CE=y
 CONFIG_CRYPTO_AES_ARM64_CE_BLK=y
-CONFIG_KPROBES=y
+# KSU manual-hook (non-GKI) mode requires KPROBES off, else ksud.c takes
+# the kprobes branch and never defines ksu_execveat_hook/ksu_vfs_read_hook/
+# ksu_input_hook that fs/exec.c, fs/read_write.c, drivers/input/input.c
+# reference directly, causing "undefined symbol" at link time.
+# CONFIG_KPROBES is not set
 CONFIG_MODULES=y
 CONFIG_MODULE_UNLOAD=y
 CONFIG_MODVERSIONS=y
