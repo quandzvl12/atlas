@@ -18,10 +18,10 @@
 
 static struct policydb *get_policydb(void)
 {
-	struct policydb *db;
-	struct selinux_policy *policy = rcu_dereference(selinux_state.policy);
-	db = &policy->policydb;
-	return db;
+	// Atlas (Samsung Exynos 4.19 downstream) predates the RCU-based
+	// selinux_state.policy scheme; policydb is a plain value embedded in
+	// selinux_state.ss, guarded by ss->policy_rwlock instead.
+	return &selinux_state.ss->policydb;
 }
 
 void apply_kernelsu_rules()
@@ -30,7 +30,7 @@ void apply_kernelsu_rules()
 		pr_info("SELinux permissive or disabled, apply rules!\n");
 	}
 
-	rcu_read_lock();
+	write_lock_irq(&selinux_state.ss->policy_rwlock);
 	struct policydb *db = get_policydb();
 
 	ksu_permissive(db, KERNEL_SU_DOMAIN);
@@ -127,7 +127,7 @@ void apply_kernelsu_rules()
 	ksu_allow(db, "zygote", "labeledfs", "filesystem", "unmount");
 #endif
 
-	rcu_read_unlock();
+	write_unlock_irq(&selinux_state.ss->policy_rwlock);
 }
 
 #define MAX_SEPOL_LEN 128
@@ -206,7 +206,7 @@ int handle_sepolicy(unsigned long arg3, void __user *arg4)
 	u32 cmd = data.cmd;
 	u32 subcmd = data.subcmd;
 
-	rcu_read_lock();
+	write_lock_irq(&selinux_state.ss->policy_rwlock);
 
 	struct policydb *db = get_policydb();
 
@@ -458,7 +458,7 @@ int handle_sepolicy(unsigned long arg3, void __user *arg4)
 	}
 
 exit:
-	rcu_read_unlock();
+	write_unlock_irq(&selinux_state.ss->policy_rwlock);
 
 	// only allow and xallow needs to reset avc cache, but we cannot do that because
 	// we are in atomic context. so we just reset it every time.
