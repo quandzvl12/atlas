@@ -258,6 +258,27 @@ static inline const struct cred *get_cred(const struct cred *cred)
 }
 
 /**
+ * get_cred_rcu - Get a reference on a set of credentials under RCU
+ * @cred: The credentials to reference
+ *
+ * Backported from upstream (>=5.x) for KSU's escape_to_root(), which reads
+ * current's cred under rcu_read_lock() and needs a refcount bump that can
+ * safely fail (returning NULL) if the cred is concurrently being freed,
+ * rather than the unconditional atomic_inc() that get_cred() does.
+ */
+static inline struct cred *get_cred_rcu(const struct cred *cred)
+{
+	struct cred *nonconst_cred = (struct cred *) cred;
+	if (!cred)
+		return NULL;
+	if (!atomic_inc_not_zero(&nonconst_cred->usage))
+		return NULL;
+	validate_creds(cred);
+	nonconst_cred->non_rcu = 0;
+	return nonconst_cred;
+}
+
+/**
  * put_cred - Release a reference to a set of credentials
  * @cred: The credentials to release
  *
