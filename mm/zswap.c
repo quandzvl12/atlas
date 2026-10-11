@@ -74,6 +74,31 @@ static u64 zswap_reject_kmemcache_fail;
 /* Duplicate store was encountered (rare) */
 static u64 zswap_duplicate_entry;
 
+/*
+ * Read-only counters under /sys/module/zswap/parameters/ (this kernel has no
+ * debugfs). stored_pages * PAGE_SIZE / pool_bytes gives the compression ratio.
+ */
+module_param_named(stat_pool_bytes, zswap_pool_total_size, ullong, 0444);
+module_param_named(stat_pool_limit_hit, zswap_pool_limit_hit, ullong, 0444);
+module_param_named(stat_written_back, zswap_written_back_pages, ullong, 0444);
+module_param_named(stat_reject_reclaim, zswap_reject_reclaim_fail, ullong, 0444);
+module_param_named(stat_reject_poor, zswap_reject_compress_poor, ullong, 0444);
+module_param_named(stat_reject_alloc, zswap_reject_alloc_fail, ullong, 0444);
+
+#define ZSWAP_ATOMIC_STAT(name, var)					\
+static int zswap_stat_##name##_get(char *buf,				\
+				   const struct kernel_param *kp)	\
+{									\
+	return sprintf(buf, "%d\n", atomic_read(&var));			\
+}									\
+static const struct kernel_param_ops zswap_stat_##name##_ops = {	\
+	.get = zswap_stat_##name##_get,					\
+};									\
+module_param_cb(stat_##name, &zswap_stat_##name##_ops, NULL, 0444)
+
+ZSWAP_ATOMIC_STAT(stored_pages, zswap_stored_pages);
+ZSWAP_ATOMIC_STAT(same_filled, zswap_same_filled_pages);
+
 /*********************************
 * tunables
 **********************************/
