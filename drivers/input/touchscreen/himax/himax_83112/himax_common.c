@@ -3026,7 +3026,7 @@ FW_force_upgrade:
 	if (err) {
 		goto err_report_data_init_failed;
 	}
-#ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
+ #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP) || defined(HX_HIGH_SENSE)
 	if (himax_common_proc_init()) {
 		input_err(true, ts->dev,
 				"%s %s: himax_common proc_init failed!\n",
@@ -3075,7 +3075,7 @@ err_register_interrupt_failed:
 	sec_cmd_exit(&ts->sec, SEC_CLASS_DEVT_TSP);
 err_sec_sysfs:
 #endif
-#ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP) || defined(HX_HIGH_SENSE)
 	remove_proc_entry(HIMAX_PROC_TOUCH_FOLDER, NULL);
 err_creat_proc_file_failed:
 #endif
