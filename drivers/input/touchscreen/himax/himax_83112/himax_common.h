@@ -68,7 +68,7 @@
 /*#define HX_AUTO_UPDATE_FW*/
 #define HX_SMART_WAKEUP		// for MR
 /*#define HX_GESTURE_TRACK*/
-/*#define HX_HIGH_SENSE*/
+#define HX_HIGH_SENSE 
 /*#define HX_PALM_REPORT*/
 /*#define HX_USB_DETECT_GLOBAL*/
 /*#define HX_USB_DETECT_CALLBACK*/
