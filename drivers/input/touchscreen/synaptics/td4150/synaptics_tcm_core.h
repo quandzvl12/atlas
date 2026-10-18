@@ -549,6 +549,7 @@ struct syna_tcm_hcd {
 	bool tsp_dump_lock;
 	long prox_power_off;
 	bool aot_enable;
+	unsigned char glove_mode;
 	const struct syna_tcm_hw_interface *hw_if;
 	int (*reset)(struct syna_tcm_hcd *tcm_hcd);
 	int (*reset_n_reinit)(struct syna_tcm_hcd *tcm_hcd, bool hw, bool update_wd);

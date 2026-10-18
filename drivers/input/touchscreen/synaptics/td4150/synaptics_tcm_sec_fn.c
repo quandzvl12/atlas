@@ -617,6 +617,40 @@ static void dead_zone_enable(void *device_data)
 	sec_cmd_set_cmd_exit(sec);
 }
 #endif
+static void glove_mode(void *device_data)
+{
+	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
+	struct syna_tcm_hcd *tcm_hcd = container_of(sec, struct syna_tcm_hcd, sec);
+	char buff[SEC_CMD_STR_LEN] = { 0 };
+	int ret;
+
+	sec_cmd_set_default_result(sec);
+
+	if (sec->cmd_param[0] < 0 || sec->cmd_param[0] > 1) {
+		snprintf(buff, sizeof(buff), "NG");
+		sec->cmd_state = SEC_CMD_STATUS_FAIL;
+	} else {
+		ret = tcm_hcd->set_dynamic_config(tcm_hcd, DC_ENABLE_GLOVE,
+			sec->cmd_param[0]);
+		if (ret < 0) {
+			input_err(true, tcm_hcd->pdev->dev.parent,
+					"%s: firmware rejected DC_ENABLE_GLOVE=%d (ret %d)\n",
+					__func__, sec->cmd_param[0], ret);
+			snprintf(buff, sizeof(buff), "NG");
+			sec->cmd_state = SEC_CMD_STATUS_FAIL;
+		} else {
+			tcm_hcd->glove_mode = sec->cmd_param[0];
+			input_info(true, tcm_hcd->pdev->dev.parent,
+					"%s: glove mode %d\n", __func__, sec->cmd_param[0]);
+			snprintf(buff, sizeof(buff), "OK");
+			sec->cmd_state = SEC_CMD_STATUS_OK;
+		}
+	}
+
+	sec_cmd_set_cmd_result(sec, buff, strnlen(buff, sizeof(buff)));
+	sec_cmd_set_cmd_exit(sec);
+}
+
 static void not_support_cmd(void *device_data)
 {
 	struct sec_cmd_data *sec = (struct sec_cmd_data *)device_data;
@@ -653,6 +687,7 @@ static struct sec_cmd sec_cmds[] = {
 #if !defined(CONFIG_SEC_FACTORY)	
 	{SEC_CMD("dead_zone_enable", dead_zone_enable),},
 #endif
+	{SEC_CMD("glove_mode", glove_mode),},
 	{SEC_CMD("not_support_cmd", not_support_cmd),},
 };
 

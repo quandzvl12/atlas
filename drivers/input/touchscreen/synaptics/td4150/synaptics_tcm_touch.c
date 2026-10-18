@@ -1240,6 +1240,22 @@ exit:
 	return 0;
 }
 
+static void touch_restore_glove_mode(struct syna_tcm_hcd *tcm_hcd)
+{
+	int retval;
+
+	if (!tcm_hcd->glove_mode)
+		return;
+
+	retval = tcm_hcd->set_dynamic_config(tcm_hcd, DC_ENABLE_GLOVE,
+			tcm_hcd->glove_mode);
+	if (retval < 0)
+		input_err(true, tcm_hcd->pdev->dev.parent,
+				"Failed to restore glove mode\n");
+	else
+		input_info(true, tcm_hcd->pdev->dev.parent, "restore glove mode\n");
+}
+
 int touch_reinit(struct syna_tcm_hcd *tcm_hcd)
 {
 	int retval = 0;
@@ -1268,6 +1284,8 @@ int touch_reinit(struct syna_tcm_hcd *tcm_hcd)
 	if (retval < 0) {
 		input_err(true, tcm_hcd->pdev->dev.parent, "Failed to set up input reporting\n");
 	}
+
+	touch_restore_glove_mode(tcm_hcd);
 
 	return retval;
 }
@@ -1340,5 +1358,7 @@ int touch_resume(struct syna_tcm_hcd *tcm_hcd)
 	else
 		input_info(true, tcm_hcd->pdev->dev.parent, "enable edge reject\n");
 #endif
+	touch_restore_glove_mode(tcm_hcd);
+
 	return 0;
 }
