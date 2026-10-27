@@ -52,8 +52,8 @@ jobs:
           make ARCH=arm64 O=out CC=clang exynos850-a21snsxx_defconfig
 
           # Tat cac tuy chon debug ton CPU (an toan). Bo comment dong cuoi neu muon tat log cam ung.
-          scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP
-          # scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
+          bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP
+          # bash scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
           make ARCH=arm64 O=out CC=clang olddefconfig
           grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP)[= ]" out/.config || true
 
