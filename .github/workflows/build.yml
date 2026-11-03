@@ -106,7 +106,9 @@ jobs:
           chmod +x kp/kptools-linux
 
           grep -E "^CONFIG_KALLSYMS(_ALL)?=" out/.config
-          ./kp/kptools-linux -p -i out/arch/arm64/boot/Image -k kp/kpimg-android -s "$APATCH_SKEY" -o Image.apatch
+          # kptools needs glibc 2.38+, but this runner (ubuntu-22.04) has 2.35, so run it in an ubuntu:24.04 container
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/w -w /w ubuntu:24.04 \
+            ./kp/kptools-linux -p -i out/arch/arm64/boot/Image -k kp/kpimg-android -s "$APATCH_SKEY" -o Image.apatch
           test -s Image.apatch
           mv Image.apatch out/arch/arm64/boot/Image
           echo "Patched Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
