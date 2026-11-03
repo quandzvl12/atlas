@@ -1,8 +1,8 @@
-name: Build Atlas Kernel
+name: Build Atlas Kernel (APatch)
 
 on:
   push:
-    branches: [ master, compat-23.2 ]
+    branches: [ apatch ]
   workflow_dispatch:
 
 jobs:
@@ -88,6 +88,29 @@ jobs:
           fi
           echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
 
+      - name: Patch kernel image with KernelPatch (APatch)
+        env:
+          APATCH_SKEY: ${{ secrets.APATCH_SKEY }}
+        run: |
+          set -e
+          if [ -z "$APATCH_SKEY" ]; then
+            echo "Missing repository secret APATCH_SKEY (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+          KP_TAG=0.13.9
+          mkdir -p kp
+          curl -fsSL --retry 5 -o kp/kptools-linux "https://github.com/bmax121/KernelPatch/releases/download/${KP_TAG}/kptools-linux"
+          curl -fsSL --retry 5 -o kp/kpimg-android "https://github.com/bmax121/KernelPatch/releases/download/${KP_TAG}/kpimg-android"
+          echo "6b9a56ac7db12ae1b76e6580ee52784019d6766453505d491a1ae39263205956  kp/kptools-linux" | sha256sum -c -
+          echo "eb2e3d16fe69410150efcf6f9425baf8cad9ac0c39f051fc8b40ce57c7143adb  kp/kpimg-android" | sha256sum -c -
+          chmod +x kp/kptools-linux
+
+          grep -E "^CONFIG_KALLSYMS(_ALL)?=" out/.config
+          ./kp/kptools-linux -p -i out/arch/arm64/boot/Image -k kp/kpimg-android -s "$APATCH_SKEY" -o Image.apatch
+          test -s Image.apatch
+          mv Image.apatch out/arch/arm64/boot/Image
+          echo "Patched Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
+
       - name: Package flashable zip
         run: |
           BUILD_SHA=$(git rev-parse --short HEAD)
@@ -103,12 +126,12 @@ jobs:
           rm -f kernel/zImage
           chmod +x anykernel.sh
 
-          zip -r9 "${GITHUB_WORKSPACE}/atlas.zip" * -x .git README.md *placeholder
+          zip -r9 "${GITHUB_WORKSPACE}/atlas-apatch.zip" * -x .git README.md *placeholder
 
           echo "BUILD_SHA=${BUILD_SHA}" >> "${GITHUB_ENV}"
 
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ env.BUILD_SHA }}.zip
-          path: atlas.zip
+          name: kernel-apatch-${{ env.BUILD_SHA }}.zip
+          path: atlas-apatch.zip
