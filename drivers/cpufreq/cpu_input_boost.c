@@ -73,6 +73,7 @@ extern int gpex_clock_get_max_clock(void);
 #define SCREEN_OFF	BIT(0)
 #define INPUT_BOOST	BIT(1)
 #define MAX_BOOST	BIT(2)
+#define BOOST_ACTIVE_MASK	(INPUT_BOOST | MAX_BOOST)
 
 struct boost_drv {
 	struct delayed_work input_unboost;
@@ -91,30 +92,55 @@ static u32 get_boost_state(struct boost_drv *b)
 	return atomic_read(&b->state);
 }
 
-static void set_boost_bit(struct boost_drv *b, u32 state)
+static bool set_boost_bit(struct boost_drv *b, u32 state)
 {
-	atomic_or(state, &b->state);
+	int old_state, new_state;
+
+	do {
+		old_state = atomic_read(&b->state);
+		new_state = old_state | (int)state;
+		if (old_state == new_state)
+			return false;
+	} while (atomic_cmpxchg(&b->state, old_state, new_state) != old_state);
+
+	return true;
 }
 
-static void clear_boost_bit(struct boost_drv *b, u32 state)
+static bool clear_boost_bit(struct boost_drv *b, u32 state)
 {
-	atomic_andnot(state, &b->state);
+	int old_state, new_state;
+
+	do {
+		old_state = atomic_read(&b->state);
+		new_state = old_state & ~(int)state;
+		if (old_state == new_state)
+			return false;
+	} while (atomic_cmpxchg(&b->state, old_state, new_state) != old_state);
+
+	return true;
 }
 
 static void update_online_cpu_policy(void)
 {
 	unsigned int cpu;
+	cpumask_t updated_policies;
 
-	/*
-	 * Unlike upstream, we don't know the cluster layout via
-	 * cpu_lp_mask/cpu_perf_mask, so refresh every online CPU's policy.
-	 * cpufreq_update_policy() is a no-op for CPUs that share a policy
-	 * already updated, so this is safe (if slightly redundant) on a
-	 * 2-cluster layout like exynos3830's domain0/domain1.
-	 */
 	get_online_cpus();
-	for_each_online_cpu(cpu)
-		cpufreq_update_policy(cpu);
+	cpumask_clear(&updated_policies);
+	for_each_online_cpu(cpu) {
+		struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
+
+		if (!policy)
+			continue;
+
+		/* Refresh each shared CPUFreq policy only once. */
+		if (!cpumask_intersects(&updated_policies, policy->related_cpus)) {
+			cpumask_or(&updated_policies, &updated_policies,
+				   policy->related_cpus);
+			cpufreq_update_policy(cpu);
+		}
+		cpufreq_cpu_put(policy);
+	}
 	put_online_cpus();
 }
 
@@ -149,8 +175,8 @@ static void __cpu_input_boost_kick(struct boost_drv *b)
 	if (is_battery_saver_on())
 		return;
 
-	set_boost_bit(b, INPUT_BOOST);
-	wake_up(&b->boost_waitq);
+	if (set_boost_bit(b, INPUT_BOOST))
+		wake_up(&b->boost_waitq);
 	mod_delayed_work(system_unbound_wq, &b->input_unboost,
 			  msecs_to_jiffies(CONFIG_INPUT_BOOST_DURATION_MS));
 }
@@ -187,8 +213,8 @@ static void __cpu_input_boost_kick_max(struct boost_drv *b,
 	} while (atomic64_cmpxchg(&b->max_boost_expires, curr_expires,
 				   new_expires) != curr_expires);
 
-	set_boost_bit(b, MAX_BOOST);
-	wake_up(&b->boost_waitq);
+	if (set_boost_bit(b, MAX_BOOST))
+		wake_up(&b->boost_waitq);
 	mod_delayed_work(system_unbound_wq, &b->max_unboost, boost_jiffies);
 }
 
@@ -207,8 +233,8 @@ static void input_unboost_worker(struct work_struct *work)
 	struct boost_drv *b = container_of(to_delayed_work(work),
 					    typeof(*b), input_unboost);
 
-	clear_boost_bit(b, INPUT_BOOST);
-	wake_up(&b->boost_waitq);
+	if (clear_boost_bit(b, INPUT_BOOST))
+		wake_up(&b->boost_waitq);
 }
 
 static void max_unboost_worker(struct work_struct *work)
@@ -216,8 +242,8 @@ static void max_unboost_worker(struct work_struct *work)
 	struct boost_drv *b = container_of(to_delayed_work(work),
 					    typeof(*b), max_unboost);
 
-	clear_boost_bit(b, MAX_BOOST);
-	wake_up(&b->boost_waitq);
+	if (clear_boost_bit(b, MAX_BOOST))
+		wake_up(&b->boost_waitq);
 }
 
 static int cpu_boost_thread(void *data)
@@ -237,8 +263,6 @@ static int cpu_boost_thread(void *data)
 			(curr_state = get_boost_state(b)) != old_state ||
 			kthread_should_stop());
 
-		old_state = curr_state;
-
 		/*
 		 * gpex_clock_set() (bên trong gpex_clock_lock_clock) gọi
 		 * mutex_lock() nên có thể sleep -- KHÔNG được gọi trực tiếp
@@ -253,12 +277,20 @@ static int cpu_boost_thread(void *data)
 		 * engage/disengage GPU boost được dồn hết vào đây, chạy trong
 		 * kthread process context, an toàn để sleep.
 		 */
-		if (curr_state & (INPUT_BOOST | MAX_BOOST))
+		if (!(old_state & BOOST_ACTIVE_MASK) &&
+		    (curr_state & BOOST_ACTIVE_MASK))
 			gpu_boost_engage();
-		else
+		else if ((old_state & BOOST_ACTIVE_MASK) &&
+			 !(curr_state & BOOST_ACTIVE_MASK))
 			gpu_boost_disengage(b);
 
-		update_online_cpu_policy();
+		/* Only aggregate boost and screen transitions alter CPU policy. */
+		if (((old_state ^ curr_state) & SCREEN_OFF) ||
+		    (!!(old_state & BOOST_ACTIVE_MASK) !=
+		     !!(curr_state & BOOST_ACTIVE_MASK)))
+			update_online_cpu_policy();
+
+		old_state = curr_state;
 	}
 
 	return 0;
@@ -303,12 +335,13 @@ static int state_notifier_cb(struct notifier_block *nb,
 		/* Screen just turned on: boost briefly to smooth the
 		 * wake-up + unlock animation, same idea as upstream's
 		 * wake boost on MSM_DRM_BLANK_UNBLANK. */
-		clear_boost_bit(b, SCREEN_OFF);
+		if (clear_boost_bit(b, SCREEN_OFF))
+			wake_up(&b->boost_waitq);
 		__cpu_input_boost_kick_max(b, CONFIG_WAKE_BOOST_DURATION_MS);
 		break;
 	case STATE_NOTIFIER_SUSPEND:
-		set_boost_bit(b, SCREEN_OFF);
-		wake_up(&b->boost_waitq);
+		if (set_boost_bit(b, SCREEN_OFF))
+			wake_up(&b->boost_waitq);
 		break;
 	default:
 		break;
