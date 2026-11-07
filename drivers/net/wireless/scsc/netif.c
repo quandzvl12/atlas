@@ -62,6 +62,8 @@
 static uint napi_cpu_big_tput_in_mbps = 400;
 #elif defined(CONFIG_SOC_S5E9815)
 static uint napi_cpu_big_tput_in_mbps = 10;
+#elif defined(CONFIG_SOC_EXYNOS3830)
+static uint napi_cpu_big_tput_in_mbps = 200;
 #else
 static uint napi_cpu_big_tput_in_mbps;
 #endif
