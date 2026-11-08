@@ -52,10 +52,14 @@ jobs:
           make ARCH=arm64 O=out CC=clang exynos850-a21snsxx_defconfig
 
           # Tat cac tuy chon debug ton CPU (an toan). Bo comment dong cuoi neu muon tat log cam ung.
-          bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP
+          bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP -d LTO_CLANG -d THINLTO
           # bash scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
           make ARCH=arm64 O=out CC=clang olddefconfig
-          grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP)[= ]" out/.config || true
+          grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO)[= ]" out/.config || true
+          if grep -qE '^CONFIG_(LTO_CLANG|THINLTO)=y$' out/.config; then
+            echo "ERROR: LTO or ThinLTO is still enabled"
+            exit 1
+          fi
 
           # Chi toi uu lich xep lenh cho A55, khong doi tap lenh
           make ARCH=arm64 O=out CC=clang KCFLAGS="-mtune=cortex-a55" -j$(nproc)

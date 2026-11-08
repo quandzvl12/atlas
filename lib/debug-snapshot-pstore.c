@@ -228,6 +228,7 @@ EXPORT_SYMBOL(dbg_snapshot_hook_pmsg);
 
 static struct ramoops_platform_data dss_ramoops_data = {
 	.record_size	= SZ_4K,
+	.console_size	= SZ_16K,
 	.pmsg_size	= SZ_4K,
 	.dump_oops	= 1,
 };
@@ -244,8 +245,16 @@ static int __init dss_pstore_init(void)
 	if (dbg_snapshot_get_enable_item("log_pstore")) {
 		dss_ramoops_data.mem_size = dbg_snapshot_get_item_size("log_pstore");
 		dss_ramoops_data.mem_address = dbg_snapshot_get_item_paddr("log_pstore");
-		dss_ramoops_data.pmsg_size = dss_ramoops_data.mem_size / 2;
-		dss_ramoops_data.record_size = dss_ramoops_data.mem_size / 2;
+		if (dss_ramoops_data.mem_size <
+		    dss_ramoops_data.console_size +
+		    dss_ramoops_data.pmsg_size +
+		    dss_ramoops_data.record_size) {
+			pr_err("debug-snapshot: log_pstore region too small\n");
+			return -EINVAL;
+		}
+
+		pr_info("debug-snapshot: ramoops console logging enabled (%lu bytes)\n",
+			dss_ramoops_data.console_size);
 	}
 	return platform_device_register(&dss_ramoops);
 }
