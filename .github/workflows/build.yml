@@ -103,7 +103,7 @@ jobs:
           rm -f kernel/zImage
           chmod +x anykernel.sh
 
-          zip -r9 "${GITHUB_WORKSPACE}/atlas.zip" * -x .git README.md *placeholder
+          zip -r9 "${GITHUB_WORKSPACE}/atlas-ultra.zip" * -x .git README.md *placeholder
 
           echo "BUILD_SHA=${BUILD_SHA}" >> "${GITHUB_ENV}"
 
@@ -111,4 +111,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kernel-${{ env.BUILD_SHA }}.zip
-          path: atlas-ultra.zip
+          path: atlas-ultra.zip 
