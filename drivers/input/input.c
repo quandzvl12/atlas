@@ -3043,9 +3043,10 @@ static int __init input_init(void)
 }
 
 /* [ System Performance - Input Booster */
-static void __init input_emstune_init(void)
+static int __init input_emstune_init(void)
 {
-	INIT_INPUT_EMSTUNE()
+        INIT_INPUT_EMSTUNE();
+        return 0;
 }
 /* System Performance - Input Booster ] */
 
@@ -3058,5 +3059,5 @@ static void __exit input_exit(void)
 }
 
 subsys_initcall(input_init);
-late_initcall(input_emstune_init);
+late_initcall_sync(input_emstune_init);
 module_exit(input_exit);
