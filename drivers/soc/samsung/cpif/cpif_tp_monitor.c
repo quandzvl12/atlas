@@ -181,9 +181,9 @@ static void tpmon_set_irq_affinity(struct tpmon_data *data)
 	mif_info("Change IRQ affinity at %ldMbps. CPU:%d\n",
 			data->tpmon->rx_mega_bps, data->values[data->curr_value]);
 
-#if defined(CONFIG_LINK_DEVICE_SHMEM) && defined(CONFIG_MCU_IPC)
-	mcu_ipc_set_affinity(0, data->values[data->curr_value]);
-#endif
+#if defined(CONFIG_LINK_DEVICE_SHMEM) && defined(CONFIG_MCU_IPC) && !defined(CONFIG_ARGOS)
+    mcu_ipc_set_affinity(0, data->values[data->curr_value]);
+#endif 
 
 #if defined(CONFIG_LINK_DEVICE_PCIE)
 	exynos_pcie_rc_set_affinity(mc->pcie_ch_num, data->values[data->curr_value]);
