@@ -18,8 +18,10 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -o Acquire::Retries=5
           sudo apt-get install -y \
+            --no-install-recommends \
+            -o Acquire::Retries=5 \
             build-essential \
             bison \
             flex \
@@ -30,8 +32,8 @@ jobs:
             libelf-dev \
             ccache \
             zip \
-            device-tree-compiler
-
+            device-tree-compiler \
+            libfdt-dev
       - name: Download AOSP Clang
         run: |
           mkdir -p clang-r547379
