@@ -1,13 +1,14 @@
-name: Build Atlas Kernel (APatch)
+name: Build Atlas Kernel
 
 on:
   push:
-    branches: [ apatch ]
+    branches: [ master, compat-23.2, apatch ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 90
 
     steps:
       - name: Checkout kernel source
@@ -17,11 +18,13 @@ jobs:
           fetch-depth: 1
 
       - name: Install build dependencies
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -o Acquire::Retries=5
-          sudo apt-get install -y \
-            --no-install-recommends \
-            -o Acquire::Retries=5 \
+          # Mirror azure cua runner hay loi DNS -> doi mirror, timeout ngan, khong de treo
+          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/apt-mirrors.txt || true
+          APT_OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
+          sudo apt-get update $APT_OPTS || true
+          sudo apt-get install -y --no-install-recommends $APT_OPTS \
             build-essential \
             bison \
             flex \
@@ -34,10 +37,14 @@ jobs:
             zip \
             device-tree-compiler \
             libfdt-dev
+
       - name: Download AOSP Clang
+        timeout-minutes: 15
         run: |
           mkdir -p clang-r547379
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" -o clang.tar.gz
+          curl -fL --retry 5 --retry-delay 5 --retry-connrefused \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" \
+            -o clang.tar.gz
           tar -xzf clang.tar.gz -C clang-r547379
           chmod -R +x clang-r547379/bin
           rm -f clang.tar.gz
@@ -70,11 +77,14 @@ jobs:
         run: |
           dtc -I dts -O dtb -o raw.dtb arch/arm64/boot/dts/exynos/exynos3830.dts
 
-          curl -sL --retry 5 --retry-delay 5 --retry-connrefused -f \
-            "https://android.googlesource.com/platform/prebuilts/misc/+/master/linux-x86/libufdt/mkdtimg?format=TEXT" \
-            -o mkdtimg.b64
-
-          base64 -d mkdtimg.b64 > mkdtimg
+          # Thu nhanh main truoc, roi master (AOSP da doi ten nhanh)
+          for BR in main master; do
+            curl -sL --retry 5 --retry-delay 5 --retry-connrefused -f \
+              "https://android.googlesource.com/platform/prebuilts/misc/+/${BR}/linux-x86/libufdt/mkdtimg?format=TEXT" \
+              -o mkdtimg.b64 || continue
+            base64 -d mkdtimg.b64 > mkdtimg 2>/dev/null || true
+            [ -s mkdtimg ] && break
+          done
           rm -f mkdtimg.b64
 
           if [ ! -s mkdtimg ]; then
@@ -94,31 +104,6 @@ jobs:
           fi
           echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
 
-      - name: Patch kernel image with KernelPatch (APatch)
-        env:
-          APATCH_SKEY: ${{ secrets.APATCH_SKEY }}
-        run: |
-          set -e
-          if [ -z "$APATCH_SKEY" ]; then
-            echo "Missing repository secret APATCH_SKEY (Settings > Secrets and variables > Actions)"
-            exit 1
-          fi
-          KP_TAG=0.13.9
-          mkdir -p kp
-          curl -fsSL --retry 5 -o kp/kptools-linux "https://github.com/bmax121/KernelPatch/releases/download/${KP_TAG}/kptools-linux"
-          curl -fsSL --retry 5 -o kp/kpimg-android "https://github.com/bmax121/KernelPatch/releases/download/${KP_TAG}/kpimg-android"
-          echo "6b9a56ac7db12ae1b76e6580ee52784019d6766453505d491a1ae39263205956  kp/kptools-linux" | sha256sum -c -
-          echo "eb2e3d16fe69410150efcf6f9425baf8cad9ac0c39f051fc8b40ce57c7143adb  kp/kpimg-android" | sha256sum -c -
-          chmod +x kp/kptools-linux
-
-          grep -E "^CONFIG_KALLSYMS(_ALL)?=" out/.config
-          # kptools needs glibc 2.38+, but this runner (ubuntu-22.04) has 2.35, so run it in an ubuntu:24.04 container
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/w -w /w ubuntu:24.04 \
-            ./kp/kptools-linux -p -i out/arch/arm64/boot/Image -k kp/kpimg-android -s "$APATCH_SKEY" -o Image.apatch
-          test -s Image.apatch
-          mv Image.apatch out/arch/arm64/boot/Image
-          echo "Patched Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
-
       - name: Package flashable zip
         run: |
           BUILD_SHA=$(git rev-parse --short HEAD)
@@ -134,12 +119,12 @@ jobs:
           rm -f kernel/zImage
           chmod +x anykernel.sh
 
-          zip -r9 "${GITHUB_WORKSPACE}/atlas-apatch.zip" * -x .git README.md *placeholder
+          zip -r9 "${GITHUB_WORKSPACE}/atlas-ultra.zip" * -x .git README.md *placeholder
 
           echo "BUILD_SHA=${BUILD_SHA}" >> "${GITHUB_ENV}"
 
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-apatch-${{ env.BUILD_SHA }}.zip
-          path: atlas-apatch.zip
+          name: kernel-${{ env.BUILD_SHA }}.zip
+          path: atlas-ultra.zip
