@@ -786,8 +786,8 @@ CONFIG_LRU_GEN_ENABLED=y
 # CONFIG_LRU_GEN_STATS is not set
 
 # Atlas A21s responsiveness and network-latency profile
-# CONFIG_LTO_CLANG is not set
-# CONFIG_THINLTO is not set
+CONFIG_LTO_CLANG=y
+CONFIG_THINLTO=y
 CONFIG_IOSCHED_BFQ=y
 CONFIG_NET_SCH_DEFAULT=y
 CONFIG_DEFAULT_FQ=y
