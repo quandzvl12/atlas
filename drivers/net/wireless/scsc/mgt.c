@@ -7821,6 +7821,8 @@ void slsi_collect_chipset_logs(struct work_struct *work)
 
 	if (bytes) {
 #ifdef CONFIG_SCSC_WLBTD
+		int ret;
+
 		/* Pass the buffer & size to mmap interface */
 		ret = scsc_wlan_mmap_set_buffer(buffer, bytes + total_header);
 		if (ret) {
