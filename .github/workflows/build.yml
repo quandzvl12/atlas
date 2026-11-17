@@ -64,20 +64,8 @@ jobs:
           bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP -d LTO_CLANG -d THINLTO
           # bash scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
 
-          # === THU NHO IMAGE (giu -O2, chi tat trace/debug) ===
-          # Image v8 = 33.95 MB > partition boot -> AnyKernel3 abort "New image larger than target partition"
-          # KHONG tat: KPROBES, BPF_LSM, SEC_DEBUG, KALLSYMS (KernelSU/Samsung co the can),
-          # va cac SCSC_* (dang dung de sua loi reset khi roi WiFi).
-          bash scripts/config --file out/.config \
-            -d FTRACE -d FUNCTION_TRACER -d FUNCTION_GRAPH_TRACER \
-            -d STACK_TRACER -d DYNAMIC_FTRACE \
-            -d PROFILING -d DEBUG_LIST
-
-          # Tat FTRACE lam mat include <asm/esr.h> gian tiep -> 2 file nay thieu khai bao. Them include thang.
-          for f in lib/debug-snapshot-dpm.c drivers/samsung/debug/sec_debug_extra_info.c; do
-            grep -q '<asm/esr.h>' "$f" || sed -i '0,/^#include/s//#include <asm\/esr.h>\n#include/' "$f"
-            grep -n 'asm/esr.h' "$f"
-          done
+          # Lan nay KHONG doi config de do kich thuoc that (xem step Size report).
+          # Tat FTRACE/TRACING lam hong nhieu driver Samsung (esr.h, ion_trace.h ...) nen bo.
 
           make ARCH=arm64 O=out CC=clang olddefconfig
           grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO|FTRACE|PROFILING|DEBUG_LIST)[= ]" out/.config || true
