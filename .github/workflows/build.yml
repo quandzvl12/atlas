@@ -2,12 +2,13 @@ name: Build Atlas Kernel
 
 on:
   push:
-    branches: [ master, compat-23.2 ]
+    branches: [ master, compat-23.2, compat-23.2-noksu, apatch ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 90
 
     steps:
       - name: Checkout kernel source
@@ -17,9 +18,13 @@ jobs:
           fetch-depth: 1
 
       - name: Install build dependencies
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          # Mirror azure cua runner hay loi DNS -> doi mirror, timeout ngan, khong de treo
+          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/apt-mirrors.txt || true
+          APT_OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
+          sudo apt-get update $APT_OPTS || true
+          sudo apt-get install -y --no-install-recommends $APT_OPTS \
             build-essential \
             bison \
             flex \
@@ -30,12 +35,16 @@ jobs:
             libelf-dev \
             ccache \
             zip \
-            device-tree-compiler
+            device-tree-compiler \
+            libfdt-dev
 
       - name: Download AOSP Clang
+        timeout-minutes: 15
         run: |
           mkdir -p clang-r547379
-          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" -o clang.tar.gz
+          curl -fL --retry 5 --retry-delay 5 --retry-connrefused \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" \
+            -o clang.tar.gz
           tar -xzf clang.tar.gz -C clang-r547379
           chmod -R +x clang-r547379/bin
           rm -f clang.tar.gz
@@ -54,8 +63,12 @@ jobs:
           # Tat cac tuy chon debug ton CPU (an toan). Bo comment dong cuoi neu muon tat log cam ung.
           bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP -d LTO_CLANG -d THINLTO
           # bash scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
+
+          # Lan nay KHONG doi config de do kich thuoc that (xem step Size report).
+          # Tat FTRACE/TRACING lam hong nhieu driver Samsung (esr.h, ion_trace.h ...) nen bo.
+
           make ARCH=arm64 O=out CC=clang olddefconfig
-          grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO)[= ]" out/.config || true
+          grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO|FTRACE|PROFILING|DEBUG_LIST)[= ]" out/.config || true
           if grep -qE '^CONFIG_(LTO_CLANG|THINLTO)=y$' out/.config; then
             echo "ERROR: LTO or ThinLTO is still enabled"
             exit 1
@@ -68,11 +81,14 @@ jobs:
         run: |
           dtc -I dts -O dtb -o raw.dtb arch/arm64/boot/dts/exynos/exynos3830.dts
 
-          curl -sL --retry 5 --retry-delay 5 --retry-connrefused -f \
-            "https://android.googlesource.com/platform/prebuilts/misc/+/master/linux-x86/libufdt/mkdtimg?format=TEXT" \
-            -o mkdtimg.b64
-
-          base64 -d mkdtimg.b64 > mkdtimg
+          # Thu nhanh main truoc, roi master (AOSP da doi ten nhanh)
+          for BR in main master; do
+            curl -sL --retry 5 --retry-delay 5 --retry-connrefused -f \
+              "https://android.googlesource.com/platform/prebuilts/misc/+/${BR}/linux-x86/libufdt/mkdtimg?format=TEXT" \
+              -o mkdtimg.b64 || continue
+            base64 -d mkdtimg.b64 > mkdtimg 2>/dev/null || true
+            [ -s mkdtimg ] && break
+          done
           rm -f mkdtimg.b64
 
           if [ ! -s mkdtimg ]; then
@@ -90,7 +106,22 @@ jobs:
             echo "Kernel Image not found!"
             exit 1
           fi
-          echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
+          SZ=$(stat -c %s out/arch/arm64/boot/Image)
+          echo "Kernel Image size: $SZ bytes ($(du -h out/arch/arm64/boot/Image | cut -f1))"
+          # Muc canh bao ~30 MiB: chua biet chinh xac partition boot, chi canh bao, khong fail
+          if [ "$SZ" -gt 31457280 ]; then
+            echo "::warning::Image > 30 MiB, co the khong vua partition boot khi repack voi Magisk"
+          fi
+
+      - name: Size report (xem cai gi chiem cho)
+        if: always()
+        run: |
+          export PATH="$(pwd)/clang-r547379/bin:${PATH}"
+          ls -l out/arch/arm64/boot/Image || true
+          echo "== built-in.a lon nhat"
+          find out -name built-in.a -size +200k -printf '%s %p\n' | sort -rn | head -25
+          echo "== 30 symbol lon nhat"
+          llvm-nm -S --size-sort out/vmlinux 2>/dev/null | tail -30 || true
 
       - name: Package flashable zip
         run: |
@@ -107,7 +138,7 @@ jobs:
           rm -f kernel/zImage
           chmod +x anykernel.sh
 
-          zip -r9 "${GITHUB_WORKSPACE}/atlas.zip" * -x .git README.md *placeholder
+          zip -r9 "${GITHUB_WORKSPACE}/atlas-ultra-noksu.zip" * -x .git README.md *placeholder
 
           echo "BUILD_SHA=${BUILD_SHA}" >> "${GITHUB_ENV}"
 
@@ -115,4 +146,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: kernel-${{ env.BUILD_SHA }}.zip
-          path: atlas.zip
+          path: atlas-ultra-noksu.zip
