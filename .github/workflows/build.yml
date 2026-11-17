@@ -73,6 +73,12 @@ jobs:
             -d STACK_TRACER -d DYNAMIC_FTRACE \
             -d PROFILING -d DEBUG_LIST
 
+          # Tat FTRACE lam mat include <asm/esr.h> gian tiep -> 2 file nay thieu khai bao. Them include thang.
+          for f in lib/debug-snapshot-dpm.c drivers/samsung/debug/sec_debug_extra_info.c; do
+            grep -q '<asm/esr.h>' "$f" || sed -i '0,/^#include/s//#include <asm\/esr.h>\n#include/' "$f"
+            grep -n 'asm/esr.h' "$f"
+          done
+
           make ARCH=arm64 O=out CC=clang olddefconfig
           grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO|FTRACE|PROFILING|DEBUG_LIST)[= ]" out/.config || true
           if grep -qE '^CONFIG_(LTO_CLANG|THINLTO)=y$' out/.config; then
