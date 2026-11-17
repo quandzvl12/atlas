@@ -63,8 +63,18 @@ jobs:
           # Tat cac tuy chon debug ton CPU (an toan). Bo comment dong cuoi neu muon tat log cam ung.
           bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP -d LTO_CLANG -d THINLTO
           # bash scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
+
+          # === THU NHO IMAGE (giu -O2, chi tat trace/debug) ===
+          # Image v8 = 33.95 MB > partition boot -> AnyKernel3 abort "New image larger than target partition"
+          # KHONG tat: KPROBES, BPF_LSM, SEC_DEBUG, KALLSYMS (KernelSU/Samsung co the can),
+          # va cac SCSC_* (dang dung de sua loi reset khi roi WiFi).
+          bash scripts/config --file out/.config \
+            -d FTRACE -d FUNCTION_TRACER -d FUNCTION_GRAPH_TRACER \
+            -d STACK_TRACER -d DYNAMIC_FTRACE \
+            -d PROFILING -d DEBUG_LIST
+
           make ARCH=arm64 O=out CC=clang olddefconfig
-          grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO)[= ]" out/.config || true
+          grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO|FTRACE|PROFILING|DEBUG_LIST)[= ]" out/.config || true
           if grep -qE '^CONFIG_(LTO_CLANG|THINLTO)=y$' out/.config; then
             echo "ERROR: LTO or ThinLTO is still enabled"
             exit 1
@@ -102,7 +112,22 @@ jobs:
             echo "Kernel Image not found!"
             exit 1
           fi
-          echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
+          SZ=$(stat -c %s out/arch/arm64/boot/Image)
+          echo "Kernel Image size: $SZ bytes ($(du -h out/arch/arm64/boot/Image | cut -f1))"
+          # Muc canh bao ~30 MiB: chua biet chinh xac partition boot, chi canh bao, khong fail
+          if [ "$SZ" -gt 31457280 ]; then
+            echo "::warning::Image > 30 MiB, co the khong vua partition boot khi repack voi Magisk"
+          fi
+
+      - name: Size report (xem cai gi chiem cho)
+        if: always()
+        run: |
+          export PATH="$(pwd)/clang-r547379/bin:${PATH}"
+          ls -l out/arch/arm64/boot/Image || true
+          echo "== built-in.a lon nhat"
+          find out -name built-in.a -size +200k -printf '%s %p\n' | sort -rn | head -25
+          echo "== 30 symbol lon nhat"
+          llvm-nm -S --size-sort out/vmlinux 2>/dev/null | tail -30 || true
 
       - name: Package flashable zip
         run: |
