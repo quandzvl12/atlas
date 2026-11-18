@@ -1,13 +1,23 @@
-name: Build Atlas Kernel
+name: Build Atlas Kernel (noksu)
 
 on:
   push:
-    branches: [ master, compat-23.2, compat-23.2-noksu, apatch ]
+    branches: [ compat-23.2-noksu ]
   workflow_dispatch:
+    inputs:
+      selinux:
+        description: "Che do SELinux cua kernel"
+        type: choice
+        default: enforcing
+        options:
+          - enforcing
+          - permissive
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      SELINUX_MODE: ${{ inputs.selinux || 'enforcing' }}
     timeout-minutes: 90
 
     steps:
@@ -64,14 +74,24 @@ jobs:
           bash scripts/config --file out/.config -d KFENCE -d DEBUG_ATOMIC_SLEEP -d LTO_CLANG -d THINLTO
           # bash scripts/config --file out/.config -d SEC_DEBUG_TSP_LOG -d TOUCHSCREEN_HIMAX_DEBUG
 
-          # Lan nay KHONG doi config de do kich thuoc that (xem step Size report).
-          # Tat FTRACE/TRACING lam hong nhieu driver Samsung (esr.h, ion_trace.h ...) nen bo.
-
           make ARCH=arm64 O=out CC=clang olddefconfig
           grep -E "CONFIG_(KFENCE|DEBUG_ATOMIC_SLEEP|LTO_CLANG|THINLTO|FTRACE|PROFILING|DEBUG_LIST)[= ]" out/.config || true
           if grep -qE '^CONFIG_(LTO_CLANG|THINLTO)=y$' out/.config; then
             echo "ERROR: LTO or ThinLTO is still enabled"
             exit 1
+          fi
+
+          # === Chon che do SELinux (workflow_dispatch input "selinux") ===
+          if [ "${SELINUX_MODE}" = "permissive" ]; then
+            echo "SELinux: build PERMISSIVE"
+            H=security/selinux/include/security.h
+            grep -q 'return READ_ONCE(state->enforcing);' "$H"
+            grep -q '^CONFIG_SECURITY_SELINUX_DEVELOP=y' out/.config || { echo "ERROR: can SECURITY_SELINUX_DEVELOP=y"; exit 1; }
+            sed -i 's|return READ_ONCE(state->enforcing);|return false; /* permissive build */|' "$H"
+            sed -i 's|WRITE_ONCE(state->enforcing, value);|(void)value; /* permissive build */|' "$H"
+            grep -n "permissive build" "$H"
+          else
+            echo "SELinux: build ENFORCING (mac dinh)"
           fi
 
           # Chi toi uu lich xep lenh cho A55, khong doi tap lenh
@@ -106,22 +126,7 @@ jobs:
             echo "Kernel Image not found!"
             exit 1
           fi
-          SZ=$(stat -c %s out/arch/arm64/boot/Image)
-          echo "Kernel Image size: $SZ bytes ($(du -h out/arch/arm64/boot/Image | cut -f1))"
-          # Muc canh bao ~30 MiB: chua biet chinh xac partition boot, chi canh bao, khong fail
-          if [ "$SZ" -gt 31457280 ]; then
-            echo "::warning::Image > 30 MiB, co the khong vua partition boot khi repack voi Magisk"
-          fi
-
-      - name: Size report (xem cai gi chiem cho)
-        if: always()
-        run: |
-          export PATH="$(pwd)/clang-r547379/bin:${PATH}"
-          ls -l out/arch/arm64/boot/Image || true
-          echo "== built-in.a lon nhat"
-          find out -name built-in.a -size +200k -printf '%s %p\n' | sort -rn | head -25
-          echo "== 30 symbol lon nhat"
-          llvm-nm -S --size-sort out/vmlinux 2>/dev/null | tail -30 || true
+          echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
 
       - name: Package flashable zip
         run: |
@@ -145,5 +150,5 @@ jobs:
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-${{ env.BUILD_SHA }}.zip
+          name: kernel-${{ env.BUILD_SHA }}-${{ env.SELINUX_MODE }}.zip
           path: atlas-ultra-noksu.zip
