@@ -4,10 +4,20 @@ on:
   push:
     branches: [ apatch ]
   workflow_dispatch:
+    inputs:
+      selinux:
+        description: "Che do SELinux cua kernel"
+        type: choice
+        default: enforcing
+        options:
+          - enforcing
+          - permissive
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      SELINUX_MODE: ${{ inputs.selinux || 'enforcing' }}
     timeout-minutes: 90
 
     steps:
@@ -68,6 +78,19 @@ jobs:
             exit 1
           fi
 
+          # === Chon che do SELinux (workflow_dispatch input "selinux") ===
+          if [ "${SELINUX_MODE}" = "permissive" ]; then
+            echo "SELinux: build PERMISSIVE"
+            H=security/selinux/include/security.h
+            grep -q 'return READ_ONCE(state->enforcing);' "$H"
+            grep -q '^CONFIG_SECURITY_SELINUX_DEVELOP=y' out/.config || { echo "ERROR: can SECURITY_SELINUX_DEVELOP=y"; exit 1; }
+            sed -i 's|return READ_ONCE(state->enforcing);|return false; /* permissive build */|' "$H"
+            sed -i 's|WRITE_ONCE(state->enforcing, value);|(void)value; /* permissive build */|' "$H"
+            grep -n "permissive build" "$H"
+          else
+            echo "SELinux: build ENFORCING (mac dinh)"
+          fi
+
           # Chi toi uu lich xep lenh cho A55, khong doi tap lenh
           make ARCH=arm64 O=out CC=clang KCFLAGS="-mtune=cortex-a55" -j$(nproc)
 
@@ -100,18 +123,7 @@ jobs:
             echo "Kernel Image not found!"
             exit 1
           fi
-          SZ=$(stat -c %s out/arch/arm64/boot/Image)
-          echo "Kernel Image size (truoc khi patch APatch): $SZ bytes ($(du -h out/arch/arm64/boot/Image | cut -f1))"
-
-      - name: Size report (xem cai gi chiem cho)
-        if: always()
-        run: |
-          export PATH="$(pwd)/clang-r547379/bin:${PATH}"
-          ls -l out/arch/arm64/boot/Image || true
-          echo "== built-in.a lon nhat"
-          find out -name built-in.a -size +200k -printf '%s %p\n' | sort -rn | head -25
-          echo "== 30 symbol lon nhat"
-          llvm-nm -S --size-sort out/vmlinux 2>/dev/null | tail -30 || true
+          echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
 
       - name: Patch kernel image with KernelPatch (APatch)
         env:
@@ -136,12 +148,7 @@ jobs:
             ./kp/kptools-linux -p -i out/arch/arm64/boot/Image -k kp/kpimg-android -s "$APATCH_SKEY" -o Image.apatch
           test -s Image.apatch
           mv Image.apatch out/arch/arm64/boot/Image
-          SZ=$(stat -c %s out/arch/arm64/boot/Image)
-          echo "Patched Image size: $SZ bytes ($(du -h out/arch/arm64/boot/Image | cut -f1))"
-          # Canh bao ~30 MiB: Image APatch lon hon ban thuong, co the khong vua partition boot
-          if [ "$SZ" -gt 31457280 ]; then
-            echo "::warning::Image sau khi patch > 30 MiB, co the khong vua partition boot khi repack voi Magisk"
-          fi
+          echo "Patched Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
 
       - name: Package flashable zip
         run: |
@@ -165,5 +172,5 @@ jobs:
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-apatch-${{ env.BUILD_SHA }}.zip
+          name: kernel-apatch-${{ env.BUILD_SHA }}-${{ env.SELINUX_MODE }}.zip
           path: atlas-apatch.zip
