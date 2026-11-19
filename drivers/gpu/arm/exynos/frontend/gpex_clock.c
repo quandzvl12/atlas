@@ -410,12 +410,40 @@ int gpex_clock_prepare_runtime_off(void)
 
 	return 0;
 }
+static void gpex_clock_recalc_max_lock(void)
+{
+	int i, v = 0;
+
+	if (clk_info.user_max_lock[SYSFS_LOCK] > 0) {
+		clk_info.max_lock = clk_info.user_max_lock[SYSFS_LOCK];
+		return;
+	}
+	for (i = 0; i < NUMBER_LOCK; i++) {
+		if (i == TMU_LOCK || clk_info.user_max_lock[i] <= 0)
+			continue;
+		v = v ? MIN(v, clk_info.user_max_lock[i]) : clk_info.user_max_lock[i];
+	}
+	clk_info.max_lock = v;
+}
+
+static void gpex_clock_recalc_min_lock(void)
+{
+	int i, v = 0;
+
+	if (clk_info.user_min_lock[SYSFS_LOCK] > 0) {
+		clk_info.min_lock = clk_info.user_min_lock[SYSFS_LOCK];
+		return;
+	}
+	for (i = 0; i < NUMBER_LOCK; i++)
+		if (clk_info.user_min_lock[i] > 0)
+			v = MAX(v, clk_info.user_min_lock[i]);
+	clk_info.min_lock = v;
+}
 
 int gpex_clock_lock_clock(gpex_clock_lock_cmd_t lock_command, gpex_clock_lock_type_t lock_type,
 			  int clock)
 {
-	int i;
-	bool dirty = false;
+	
 	unsigned long flags;
 	int max_lock_clk = 0;
 	int valid_clock = 0;
@@ -448,18 +476,8 @@ int gpex_clock_lock_clock(gpex_clock_lock_cmd_t lock_command, gpex_clock_lock_ty
 				valid_clock);
 		}
 		clk_info.user_max_lock[lock_type] = valid_clock;
-		clk_info.max_lock = valid_clock;
-
-		if (clk_info.max_lock > 0) {
-			for (i = 0; i < NUMBER_LOCK; i++) {
-				if (clk_info.user_max_lock[i] > 0)
-					clk_info.max_lock =
-						MIN(clk_info.max_lock, clk_info.user_max_lock[i]);
-			}
-		} else {
-			clk_info.max_lock = valid_clock;
-		}
-
+		gpex_clock_recalc_max_lock();
+		
 		gpex_dvfs_spin_unlock(&flags);
 
 		if ((clk_info.max_lock > 0) && (gpex_clock_get_cur_clock() >= clk_info.max_lock))
@@ -485,18 +503,8 @@ int gpex_clock_lock_clock(gpex_clock_lock_cmd_t lock_command, gpex_clock_lock_ty
 				valid_clock);
 		}
 		clk_info.user_min_lock[lock_type] = valid_clock;
-		clk_info.min_lock = valid_clock;
-
-		if (clk_info.min_lock > 0) {
-			for (i = 0; i < NUMBER_LOCK; i++) {
-				if (clk_info.user_min_lock[i] > 0)
-					clk_info.min_lock =
-						MAX(clk_info.min_lock, clk_info.user_min_lock[i]);
-			}
-		} else {
-			clk_info.min_lock = valid_clock;
-		}
-
+		gpex_clock_recalc_min_lock();
+		
 		max_lock_clk =
 			(clk_info.max_lock == 0) ? gpex_clock_get_max_clock() : clk_info.max_lock;
 
@@ -513,19 +521,9 @@ int gpex_clock_lock_clock(gpex_clock_lock_cmd_t lock_command, gpex_clock_lock_ty
 		break;
 	case GPU_CLOCK_MAX_UNLOCK:
 		gpex_dvfs_spin_lock(&flags);
-		clk_info.user_max_lock[lock_type] = 0;
-		clk_info.max_lock = gpex_clock_get_max_clock();
-
-		for (i = 0; i < NUMBER_LOCK; i++) {
-			if (clk_info.user_max_lock[i] > 0) {
-				dirty = true;
-				clk_info.max_lock =
-					MIN(clk_info.user_max_lock[i], clk_info.max_lock);
-			}
-		}
-
-		if (!dirty)
-			clk_info.max_lock = 0;
+		
+        clk_info.user_max_lock[lock_type] = 0;
+		gpex_clock_recalc_max_lock();
 
 		gpex_dvfs_spin_unlock(&flags);
 		GPU_LOG_DETAILED(MALI_EXYNOS_DEBUG, LSI_GPU_MAX_LOCK, lock_type, clock,
@@ -533,19 +531,9 @@ int gpex_clock_lock_clock(gpex_clock_lock_cmd_t lock_command, gpex_clock_lock_ty
 		break;
 	case GPU_CLOCK_MIN_UNLOCK:
 		gpex_dvfs_spin_lock(&flags);
+		
 		clk_info.user_min_lock[lock_type] = 0;
-		clk_info.min_lock = gpex_clock_get_min_clock();
-
-		for (i = 0; i < NUMBER_LOCK; i++) {
-			if (clk_info.user_min_lock[i] > 0) {
-				dirty = true;
-				clk_info.min_lock =
-					MAX(clk_info.user_min_lock[i], clk_info.min_lock);
-			}
-		}
-
-		if (!dirty)
-			clk_info.min_lock = 0;
+		gpex_clock_recalc_min_lock();
 
 		gpex_dvfs_spin_unlock(&flags);
 		GPU_LOG_DETAILED(MALI_EXYNOS_DEBUG, LSI_GPU_MIN_LOCK, lock_type, clock,
